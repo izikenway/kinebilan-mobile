@@ -1,11 +1,267 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Alert, RefreshControl, Linking } from 'react-native';
-import { Card, Title, Text, Button, Divider, ActivityIndicator, List, useTheme } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, RefreshControl, Linking, Alert } from 'react-native';
+import { Card, Title, Text, Button, Divider, ActivityIndicator, List, Chip, FAB, useTheme } from 'react-native-paper';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { patientsAPI, appointmentsAPI, bilansAPI } from '../api/api';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import useApiRequest from '../hooks/useApiRequest';
 import useDateFormatter from '../hooks/useDateFormatter';
+
+/**
+ * Section d'en-tête du patient
+ */
+const PatientHeader = ({ patient }) => {
+  return (
+    <View style={styles.headerContainer}>
+      <View style={styles.headerLeft}>
+        <Title style={styles.patientName}>{patient.nom}</Title>
+      </View>
+      <View style={styles.headerRight}>
+        <Chip mode="outlined" style={styles.patientIdChip}>
+          ID: {patient.patient_id}
+        </Chip>
+      </View>
+    </View>
+  );
+};
+
+/**
+ * Section d'informations de contact
+ */
+const ContactSection = ({ patient, handleCall, handleEmail }) => {
+  if (!patient.telephone && !patient.email) return null;
+  
+  return (
+    <>
+      <Divider style={styles.divider} />
+      <View style={styles.contactSection}>
+        <Text style={styles.sectionTitle}>Contact</Text>
+        
+        <View style={styles.contactButtons}>
+          {patient.telephone && (
+            <Button 
+              mode="outlined" 
+              icon="phone" 
+              onPress={handleCall}
+              style={styles.contactButton}
+            >
+              Appeler
+            </Button>
+          )}
+          
+          {patient.email && (
+            <Button 
+              mode="outlined" 
+              icon="email" 
+              onPress={handleEmail}
+              style={styles.contactButton}
+            >
+              Email
+            </Button>
+          )}
+        </View>
+        
+        <View style={styles.contactDetails}>
+          {patient.telephone && (
+            <View style={styles.contactItem}>
+              <Icon name="phone" size={20} color="#5b9bd5" style={styles.contactIcon} />
+              <Text style={styles.contactText}>{patient.telephone}</Text>
+            </View>
+          )}
+          
+          {patient.email && (
+            <View style={styles.contactItem}>
+              <Icon name="email" size={20} color="#5b9bd5" style={styles.contactIcon} />
+              <Text style={styles.contactText}>{patient.email}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </>
+  );
+};
+
+/**
+ * Section des rendez-vous
+ */
+const AppointmentsSection = ({ 
+  appointments, 
+  loading, 
+  onPressAppointment,
+  formatDateTime,
+  navigateToNewAppointment
+}) => {
+  const theme = useTheme();
+  
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'confirmé': return '#4CAF50';
+      case 'annulé': return '#F44336';
+      case 'en attente': return '#FF9800';
+      default: return theme.colors.disabled;
+    }
+  };
+  
+  return (
+    <>
+      <Divider style={styles.divider} />
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Rendez-vous</Text>
+          <Button 
+            mode="text"
+            icon="plus"
+            onPress={navigateToNewAppointment}
+          >
+            Ajouter
+          </Button>
+        </View>
+        
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+          </View>
+        ) : appointments.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>Aucun rendez-vous pour ce patient</Text>
+          </View>
+        ) : (
+          appointments.map((appointment) => (
+            <Card 
+              key={appointment.rdv_id} 
+              style={styles.itemCard}
+              onPress={() => onPressAppointment(appointment.rdv_id)}
+            >
+              <Card.Content>
+                <View style={styles.appointmentHeader}>
+                  <Text style={styles.appointmentDate}>
+                    {formatDateTime(appointment.date)}
+                  </Text>
+                  <Chip 
+                    mode="outlined"
+                    style={[
+                      styles.statusChip, 
+                      { borderColor: getStatusColor(appointment.statut) }
+                    ]}
+                    textStyle={{ color: getStatusColor(appointment.statut) }}
+                  >
+                    {appointment.statut}
+                  </Chip>
+                </View>
+                
+                <Text style={styles.appointmentType}>
+                  Type: {appointment.type || 'Standard'}
+                </Text>
+                
+                {appointment.notes && (
+                  <Text 
+                    style={styles.appointmentNotes}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                  >
+                    {appointment.notes}
+                  </Text>
+                )}
+              </Card.Content>
+            </Card>
+          ))
+        )}
+      </View>
+    </>
+  );
+};
+
+/**
+ * Section des bilans
+ */
+const BilansSection = ({ 
+  bilans, 
+  loading, 
+  onPressBilan,
+  formatDate,
+  navigateToNewBilan
+}) => {
+  const theme = useTheme();
+  
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'validé': return '#4CAF50';
+      case 'en cours': return '#FF9800';
+      case 'rejeté': return '#F44336';
+      case 'à revoir': return '#9C27B0';
+      default: return theme.colors.disabled;
+    }
+  };
+  
+  return (
+    <>
+      <Divider style={styles.divider} />
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Bilans</Text>
+          <Button 
+            mode="text"
+            icon="plus"
+            onPress={navigateToNewBilan}
+          >
+            Ajouter
+          </Button>
+        </View>
+        
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+          </View>
+        ) : bilans.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>Aucun bilan pour ce patient</Text>
+          </View>
+        ) : (
+          bilans.map((bilan) => (
+            <Card 
+              key={bilan.bilan_id} 
+              style={styles.itemCard}
+              onPress={() => onPressBilan(bilan.bilan_id)}
+            >
+              <Card.Content>
+                <View style={styles.bilanHeader}>
+                  <View>
+                    <Text style={styles.bilanType}>
+                      Bilan {bilan.type || 'standard'}
+                    </Text>
+                    <Text style={styles.bilanDate}>
+                      {formatDate(bilan.date_creation)}
+                    </Text>
+                  </View>
+                  <Chip 
+                    mode="outlined"
+                    style={[
+                      styles.statusChip, 
+                      { borderColor: getStatusColor(bilan.statut) }
+                    ]}
+                    textStyle={{ color: getStatusColor(bilan.statut) }}
+                  >
+                    {bilan.statut}
+                  </Chip>
+                </View>
+                
+                {bilan.motif && (
+                  <Text 
+                    style={styles.bilanMotif}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                  >
+                    {bilan.motif}
+                  </Text>
+                )}
+              </Card.Content>
+            </Card>
+          ))
+        )}
+      </View>
+    </>
+  );
+};
 
 /**
  * Écran de détail d'un patient
@@ -24,15 +280,16 @@ const PatientDetailScreen = () => {
   const [patient, setPatient] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [bilans, setBilans] = useState([]);
+  const [loadingAppointments, setLoadingAppointments] = useState(false);
+  const [loadingBilans, setLoadingBilans] = useState(false);
   
-  // Chargement initial des données du patient
+  // Chargement initial des données
   useEffect(() => {
     loadPatientData();
   }, [id]);
   
-  // Fonction pour charger les données du patient et ses rendez-vous/bilans
+  // Fonction pour charger les données du patient
   const loadPatientData = async (refresh = false) => {
-    // Chargement des données du patient
     await executeRequest(
       () => patientsAPI.getById(id),
       {
@@ -42,66 +299,93 @@ const PatientDetailScreen = () => {
         onSuccess: (response) => {
           setPatient(response.data);
           
-          // Une fois le patient chargé, récupérer ses rendez-vous et bilans
-          loadPatientAppointments();
-          loadPatientBilans();
+          // Charger les rendez-vous et bilans
+          loadAppointments();
+          loadBilans();
         }
       }
     );
   };
   
   // Fonction pour charger les rendez-vous du patient
-  const loadPatientAppointments = async () => {
-    await executeRequest(
-      () => appointmentsAPI.getByPatient(id, { limit: 5 }),
-      {
-        showErrors: false,
-        onSuccess: (response) => {
-          setAppointments(response.data.results || []);
-        }
-      }
-    );
+  const loadAppointments = async () => {
+    setLoadingAppointments(true);
+    
+    try {
+      const response = await appointmentsAPI.getByPatient(id, { limit: 5 });
+      setAppointments(response.data.results || []);
+    } catch (error) {
+      console.error('Erreur lors du chargement des rendez-vous:', error);
+    } finally {
+      setLoadingAppointments(false);
+    }
   };
   
   // Fonction pour charger les bilans du patient
-  const loadPatientBilans = async () => {
-    await executeRequest(
-      () => bilansAPI.getByPatient(id, { limit: 5 }),
-      {
-        showErrors: false,
-        onSuccess: (response) => {
-          setBilans(response.data.results || []);
-        }
-      }
-    );
+  const loadBilans = async () => {
+    setLoadingBilans(true);
+    
+    try {
+      const response = await bilansAPI.getByPatient(id, { limit: 5 });
+      setBilans(response.data.results || []);
+    } catch (error) {
+      console.error('Erreur lors du chargement des bilans:', error);
+    } finally {
+      setLoadingBilans(false);
+    }
   };
   
-  // Rafraîchissement des données
+  // Fonction de rafraîchissement
   const onRefresh = () => {
     loadPatientData(true);
   };
   
-  // Navigation vers l'écran de modification du patient
+  // Fonction pour appeler le patient
+  const handleCall = () => {
+    if (patient && patient.telephone) {
+      Linking.openURL(`tel:${patient.telephone}`);
+    }
+  };
+  
+  // Fonction pour envoyer un email au patient
+  const handleEmail = () => {
+    if (patient && patient.email) {
+      Linking.openURL(`mailto:${patient.email}`);
+    }
+  };
+  
+  // Navigation vers la modification du patient
   const navigateToEditPatient = () => {
     navigation.navigate('PatientForm', { id: id });
   };
   
-  // Navigation vers la création d'un nouveau bilan
+  // Navigation vers un nouveau rendez-vous pour ce patient
+  const navigateToNewAppointment = () => {
+    navigation.navigate('AppointmentForm', { patientId: id });
+  };
+  
+  // Navigation vers un nouveau bilan pour ce patient
   const navigateToNewBilan = () => {
     navigation.navigate('BilanForm', { patientId: id });
   };
   
-  // Navigation vers la création d'un nouveau rendez-vous
-  const navigateToNewRendezVous = () => {
-    navigation.navigate('AppointmentForm', { patientId: id });
+  // Navigation vers les détails d'un rendez-vous
+  const navigateToAppointmentDetail = (appointmentId) => {
+    navigation.navigate('AppointmentDetails', { id: appointmentId });
+  };
+  
+  // Navigation vers les détails d'un bilan
+  const navigateToBilanDetail = (bilanId) => {
+    navigation.navigate('BilanDetails', { id: bilanId });
   };
   
   // Fonction pour anonymiser le patient
   const handleAnonymize = () => {
     showConfirmation({
       title: 'Anonymiser le patient',
-      message: 'Êtes-vous sûr de vouloir anonymiser ce patient ? Cette action est irréversible et remplacera toutes les données personnelles du patient par des valeurs anonymes.',
+      message: 'Êtes-vous sûr de vouloir anonymiser ce patient ? Cette action ne peut pas être annulée. Les données personnelles du patient seront remplacées par des valeurs anonymes.',
       confirmLabel: 'Anonymiser',
+      cancelLabel: 'Annuler',
       onConfirm: async () => {
         await executeRequest(
           () => patientsAPI.anonymize(id),
@@ -112,48 +396,6 @@ const PatientDetailScreen = () => {
               Alert.alert(
                 'Succès',
                 'Le patient a été anonymisé avec succès.',
-                [{ text: 'OK', onPress: () => loadPatientData() }]
-              );
-            }
-          }
-        );
-      }
-    });
-  };
-  
-  // Fonction pour exporter les données du patient (RGPD)
-  const handleExport = async () => {
-    await executeRequest(
-      () => patientsAPI.export(id),
-      {
-        errorTitle: 'Erreur',
-        errorMessage: 'Impossible d\'exporter les données du patient. Veuillez réessayer.',
-        onSuccess: (response) => {
-          Alert.alert(
-            'Succès',
-            'Les données du patient ont été exportées avec succès. Vous recevrez le document par email.'
-          );
-        }
-      }
-    );
-  };
-  
-  // Fonction pour supprimer le patient
-  const handleDelete = () => {
-    showConfirmation({
-      title: 'Supprimer le patient',
-      message: 'Êtes-vous sûr de vouloir supprimer définitivement ce patient ? Cette action est irréversible et supprimera également tous les rendez-vous et bilans associés.',
-      confirmLabel: 'Supprimer',
-      onConfirm: async () => {
-        await executeRequest(
-          () => patientsAPI.delete(id),
-          {
-            errorTitle: 'Erreur',
-            errorMessage: 'Impossible de supprimer le patient. Veuillez réessayer.',
-            onSuccess: () => {
-              Alert.alert(
-                'Succès',
-                'Le patient a été supprimé avec succès.',
                 [{ text: 'OK', onPress: () => navigation.goBack() }]
               );
             }
@@ -161,30 +403,6 @@ const PatientDetailScreen = () => {
         );
       }
     });
-  };
-  
-  // Appeler le patient
-  const callPatient = () => {
-    if (patient && patient.telephone) {
-      Linking.openURL(`tel:${patient.telephone}`);
-    } else {
-      Alert.alert(
-        'Information',
-        'Aucun numéro de téléphone disponible pour ce patient.'
-      );
-    }
-  };
-  
-  // Envoyer un email au patient
-  const emailPatient = () => {
-    if (patient && patient.email) {
-      Linking.openURL(`mailto:${patient.email}`);
-    } else {
-      Alert.alert(
-        'Information',
-        'Aucune adresse email disponible pour ce patient.'
-      );
-    }
   };
   
   // Affichage d'un chargement
@@ -211,208 +429,70 @@ const PatientDetailScreen = () => {
   }
   
   return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          colors={[theme.colors.primary]}
-        />
-      }
-    >
-      {/* Carte d'information du patient */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <View style={styles.headerContainer}>
-            <Title style={styles.patientName}>{patient.nom}</Title>
-            <View style={styles.actionIcons}>
-              <Button
-                icon="phone"
-                mode="text"
-                onPress={callPatient}
-                disabled={!patient.telephone}
-                style={styles.actionIcon}
-              />
-              <Button
-                icon="email"
-                mode="text"
-                onPress={emailPatient}
-                disabled={!patient.email}
-                style={styles.actionIcon}
-              />
-            </View>
-          </View>
-          
-          <Divider style={styles.divider} />
-          
-          <View style={styles.infoGrid}>
-            {patient.email && (
-              <View style={styles.infoItem}>
-                <Text style={styles.infoLabel}>Email:</Text>
-                <Text style={styles.infoValue}>{patient.email}</Text>
-              </View>
-            )}
+    <View style={styles.container}>
+      <ScrollView 
+        style={styles.scrollContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.colors.primary]}
+          />
+        }
+      >
+        {/* Carte principale */}
+        <Card style={styles.card}>
+          <Card.Content>
+            {/* En-tête */}
+            <PatientHeader patient={patient} />
             
-            {patient.telephone && (
-              <View style={styles.infoItem}>
-                <Text style={styles.infoLabel}>Téléphone:</Text>
-                <Text style={styles.infoValue}>{patient.telephone}</Text>
-              </View>
-            )}
+            {/* Informations de contact */}
+            <ContactSection 
+              patient={patient}
+              handleCall={handleCall}
+              handleEmail={handleEmail}
+            />
             
-            {patient.date_creation && (
-              <View style={styles.infoItem}>
-                <Text style={styles.infoLabel}>Créé le:</Text>
-                <Text style={styles.infoValue}>{formatDate(patient.date_creation)}</Text>
-              </View>
-            )}
+            {/* Rendez-vous */}
+            <AppointmentsSection 
+              appointments={appointments}
+              loading={loadingAppointments}
+              onPressAppointment={navigateToAppointmentDetail}
+              formatDateTime={formatDateTime}
+              navigateToNewAppointment={navigateToNewAppointment}
+            />
             
-            {patient.dernier_bilan && (
-              <View style={styles.infoItem}>
-                <Text style={styles.infoLabel}>Dernier bilan:</Text>
-                <Text style={styles.infoValue}>{formatDate(patient.dernier_bilan)}</Text>
-              </View>
-            )}
-          </View>
-        </Card.Content>
-      </Card>
+            {/* Bilans */}
+            <BilansSection 
+              bilans={bilans}
+              loading={loadingBilans}
+              onPressBilan={navigateToBilanDetail}
+              formatDate={formatDate}
+              navigateToNewBilan={navigateToNewBilan}
+            />
+          </Card.Content>
+        </Card>
+      </ScrollView>
       
-      {/* Prochains rendez-vous */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <View style={styles.sectionHeader}>
-            <Title style={styles.sectionTitle}>Rendez-vous</Title>
-            <Button 
-              mode="contained" 
-              icon="plus"
-              onPress={navigateToNewRendezVous}
-              style={styles.addSectionButton}
-            >
-              Ajouter
-            </Button>
-          </View>
-          
-          {appointments.length === 0 ? (
-            <Text style={styles.emptyText}>Aucun rendez-vous à venir</Text>
-          ) : (
-            <>
-              {appointments.map((appointment) => (
-                <List.Item
-                  key={appointment.rdv_id}
-                  title={formatDateTime(appointment.date)}
-                  description={appointment.type || 'Standard'}
-                  left={props => <List.Icon {...props} icon="calendar" />}
-                  right={props => <List.Icon {...props} icon="chevron-right" />}
-                  onPress={() => navigation.navigate('AppointmentDetails', { id: appointment.rdv_id })}
-                  style={styles.listItem}
-                />
-              ))}
-              
-              {appointments.length > 0 && (
-                <Button 
-                  mode="text" 
-                  onPress={() => {}} // Navigation vers tous les rendez-vous du patient
-                  style={styles.viewAllButton}
-                >
-                  Voir tous les rendez-vous
-                </Button>
-              )}
-            </>
-          )}
-        </Card.Content>
-      </Card>
+      {/* Bouton d'édition */}
+      <FAB
+        style={styles.fab}
+        icon="pencil"
+        onPress={navigateToEditPatient}
+        color="#fff"
+      />
       
-      {/* Bilans du patient */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <View style={styles.sectionHeader}>
-            <Title style={styles.sectionTitle}>Bilans</Title>
-            <Button 
-              mode="contained" 
-              icon="plus"
-              onPress={navigateToNewBilan}
-              style={styles.addSectionButton}
-            >
-              Ajouter
-            </Button>
-          </View>
-          
-          {bilans.length === 0 ? (
-            <Text style={styles.emptyText}>Aucun bilan disponible</Text>
-          ) : (
-            <>
-              {bilans.map((bilan) => (
-                <List.Item
-                  key={bilan.bilan_id}
-                  title={`Bilan ${bilan.type || 'standard'}`}
-                  description={`${formatDate(bilan.date_creation)} - ${bilan.statut}`}
-                  left={props => <List.Icon {...props} icon="clipboard-text" />}
-                  right={props => <List.Icon {...props} icon="chevron-right" />}
-                  onPress={() => navigation.navigate('BilanDetails', { id: bilan.bilan_id })}
-                  style={styles.listItem}
-                />
-              ))}
-              
-              {bilans.length > 0 && (
-                <Button 
-                  mode="text" 
-                  onPress={() => {}} // Navigation vers tous les bilans du patient
-                  style={styles.viewAllButton}
-                >
-                  Voir tous les bilans
-                </Button>
-              )}
-            </>
-          )}
-        </Card.Content>
-      </Card>
-      
-      {/* Actions */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title style={styles.sectionTitle}>Actions</Title>
-          
-          <View style={styles.actionsContainer}>
-            <Button
-              mode="contained"
-              icon="pencil"
-              onPress={navigateToEditPatient}
-              style={[styles.actionButton, { backgroundColor: theme.colors.primary }]}
-            >
-              Modifier
-            </Button>
-            
-            <Button
-              mode="contained"
-              icon="file-export"
-              onPress={handleExport}
-              style={[styles.actionButton, { backgroundColor: '#2196F3' }]}
-            >
-              Exporter (RGPD)
-            </Button>
-            
-            <Button
-              mode="contained"
-              icon="incognito"
-              onPress={handleAnonymize}
-              style={[styles.actionButton, { backgroundColor: '#9C27B0' }]}
-            >
-              Anonymiser
-            </Button>
-            
-            <Button
-              mode="contained"
-              icon="delete"
-              onPress={handleDelete}
-              style={[styles.actionButton, { backgroundColor: '#F44336' }]}
-            >
-              Supprimer
-            </Button>
-          </View>
-        </Card.Content>
-      </Card>
-    </ScrollView>
+      {/* Bouton d'anonymisation */}
+      <Button
+        mode="text"
+        icon="incognito"
+        onPress={handleAnonymize}
+        style={styles.anonymizeButton}
+        color="#F44336"
+      >
+        Anonymiser
+      </Button>
+    </View>
   );
 };
 
@@ -420,6 +500,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  scrollContainer: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
@@ -445,76 +528,132 @@ const styles = StyleSheet.create({
     marginVertical: 20,
   },
   card: {
-    margin: 8,
+    margin: 16,
     elevation: 2,
   },
   headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+  },
+  headerLeft: {
+    flex: 1,
   },
   patientName: {
-    fontSize: 20,
+    fontSize: 24,
   },
-  actionIcons: {
-    flexDirection: 'row',
+  headerRight: {
+    marginLeft: 16,
   },
-  actionIcon: {
-    marginHorizontal: -4,
+  patientIdChip: {
+    height: 24,
   },
   divider: {
-    marginVertical: 12,
+    marginVertical: 16,
   },
-  infoGrid: {
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  contactSection: {
+    marginBottom: 8,
+  },
+  contactButtons: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    marginBottom: 16,
   },
-  infoItem: {
-    width: '50%',
-    marginBottom: 12,
-    paddingRight: 8,
+  contactButton: {
+    marginRight: 8,
   },
-  infoLabel: {
-    fontSize: 12,
-    color: '#666',
+  contactDetails: {
+    marginBottom: 8,
   },
-  infoValue: {
-    fontSize: 14,
-    marginTop: 2,
+  contactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  contactIcon: {
+    marginRight: 8,
+  },
+  contactText: {
+    fontSize: 16,
+  },
+  section: {
+    marginBottom: 8,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  sectionTitle: {
-    fontSize: 18,
-  },
-  addSectionButton: {
-    height: 36,
-  },
-  listItem: {
-    padding: 0,
+  emptyContainer: {
+    padding: 16,
+    alignItems: 'center',
   },
   emptyText: {
-    textAlign: 'center',
+    fontSize: 14,
     color: '#666',
     fontStyle: 'italic',
-    padding: 16,
   },
-  viewAllButton: {
+  itemCard: {
+    marginBottom: 8,
+  },
+  appointmentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  appointmentDate: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  statusChip: {
+    height: 24,
+  },
+  appointmentType: {
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  appointmentNotes: {
+    fontSize: 12,
+    color: '#666',
     marginTop: 4,
   },
-  actionsContainer: {
+  bilanHeader: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  actionButton: {
-    width: '48%',
+    alignItems: 'center',
     marginBottom: 8,
+  },
+  bilanType: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  bilanDate: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  bilanMotif: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+  },
+  fab: {
+    position: 'absolute',
+    margin: 16,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#5b9bd5',
+  },
+  anonymizeButton: {
+    position: 'absolute',
+    left: 16,
+    bottom: 16,
   },
 });
 
