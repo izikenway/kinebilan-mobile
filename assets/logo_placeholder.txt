@@ -1,0 +1,11 @@
+Ce fichier est un placeholder pour le dossier assets.
+
+Le dossier assets devrait contenir les fichiers suivants:
+- icon.png - L'icône de l'application
+- splash.png - L'écran de démarrage
+- adaptive-icon.png - L'icône adaptative pour Android
+- favicon.png - Le favicon pour le mode web
+- notification-icon.png - L'icône pour les notifications
+- logo.png - Le logo de l'application
+
+Ces images doivent être créées et ajoutées au projet avant le déploiement.
