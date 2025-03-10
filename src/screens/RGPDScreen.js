@@ -1,165 +1,200 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
-import { Card, Title, Paragraph, Switch, Text, Button, Divider, ActivityIndicator, List, useTheme } from 'react-native-paper';
-import { useNavigation } from '@react-navigation/native';
+import { Title, Text, Card, List, Switch, Divider, Button, ActivityIndicator, useTheme } from 'react-native-paper';
 import { rgpdAPI } from '../api/api';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import useApiRequest from '../hooks/useApiRequest';
+import { useAuth } from '../context/AuthContext';
 
 /**
- * Écran de gestion des consentements RGPD
+ * Écran de gestion RGPD
  */
 const RGPDScreen = () => {
-  const navigation = useNavigation();
   const theme = useTheme();
-  const { loading, executeRequest } = useApiRequest();
+  const { user } = useAuth();
+  const { loading, executeRequest, showConfirmation } = useApiRequest();
   
   // États
-  const [deletionPolicy, setDeletionPolicy] = useState(null);
-  const [consentements, setConsentements] = useState({
-    donnees_personnelles: true,
-    communications: false,
-    analyses_statistiques: false,
-  });
+  const [consentItems, setConsentItems] = useState([
+    {
+      id: 'contact_email',
+      title: 'Communication par email',
+      description: 'Autorise l\'envoi d\'emails concernant vos rendez-vous, bilans et autres informations importantes.',
+      accepted: false
+    },
+    {
+      id: 'contact_sms',
+      title: 'Communication par SMS',
+      description: 'Autorise l\'envoi de SMS pour les rappels de rendez-vous et notifications.',
+      accepted: false
+    },
+    {
+      id: 'data_storage',
+      title: 'Stockage des données',
+      description: 'Autorise le stockage de vos données personnelles et médicales selon notre politique de confidentialité.',
+      accepted: false
+    },
+    {
+      id: 'data_processing',
+      title: 'Traitement des données',
+      description: 'Autorise le traitement de vos données dans le cadre de votre suivi thérapeutique.',
+      accepted: false
+    },
+    {
+      id: 'data_sharing',
+      title: 'Partage des données',
+      description: 'Autorise le partage de vos données avec d\'autres professionnels de santé impliqués dans votre traitement.',
+      accepted: false
+    }
+  ]);
   
-  // Chargement initial des données RGPD
+  // Chargement initial des consentements
   useEffect(() => {
-    loadDeletionPolicy();
-  }, []);
+    if (user && user.id) {
+      loadConsents();
+    }
+  }, [user]);
   
-  // Fonction pour charger la politique de suppression
-  const loadDeletionPolicy = async () => {
+  // Fonction pour charger les consentements du patient
+  const loadConsents = async () => {
     await executeRequest(
-      () => rgpdAPI.getDeletion(),
+      () => rgpdAPI.getConsents(user.id),
       {
-        showErrors: true,
         errorTitle: 'Erreur',
-        errorMessage: 'Impossible de charger la politique de suppression des données. Veuillez réessayer.',
+        errorMessage: 'Impossible de charger vos préférences RGPD. Veuillez réessayer.',
         onSuccess: (response) => {
-          setDeletionPolicy(response.data);
+          const consents = response.data || {};
+          
+          // Mise à jour des consentements
+          setConsentItems(prevItems => 
+            prevItems.map(item => ({
+              ...item,
+              accepted: consents[item.id] === true
+            }))
+          );
         }
       }
     );
   };
   
-  // Fonction pour mettre à jour un consentement
-  const updateConsent = async (type, value) => {
-    // Mise à jour de l'état local immédiatement pour une meilleure réactivité
-    setConsentements(prev => ({
-      ...prev,
-      [type]: value
-    }));
+  // Fonction pour modifier un consentement
+  const handleConsentChange = async (id, value) => {
+    // Mise à jour locale immédiate pour l'interface
+    setConsentItems(prevItems =>
+      prevItems.map(item =>
+        item.id === id ? { ...item, accepted: value } : item
+      )
+    );
     
-    // Si l'utilisateur a un patient actif (pas dans le contexte global ici)
-    // On peut implémenter la mise à jour du consentement via l'API
-    
-    // Note: Dans un cas réel, cette fonction devrait être appelée avec l'ID d'un patient spécifique
+    // Envoi de la mise à jour au serveur
+    await executeRequest(
+      () => rgpdAPI.setConsent(user.id, id, value),
+      {
+        errorTitle: 'Erreur',
+        errorMessage: 'Impossible de mettre à jour votre consentement. Veuillez réessayer.',
+        onError: () => {
+          // En cas d'erreur, rétablir l'état précédent
+          setConsentItems(prevItems =>
+            prevItems.map(item =>
+              item.id === id ? { ...item, accepted: !value } : item
+            )
+          );
+        }
+      }
+    );
   };
   
-  // Rendu d'un indicateur de chargement si nécessaire
-  if (loading && !deletionPolicy) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text style={styles.loadingText}>Chargement des informations RGPD...</Text>
-      </View>
+  // Fonction pour exporter les données
+  const handleExportData = async () => {
+    await executeRequest(
+      () => rgpdAPI.exportData(user.id),
+      {
+        errorTitle: 'Erreur',
+        errorMessage: 'Impossible d\'exporter vos données. Veuillez réessayer.',
+        onSuccess: () => {
+          Alert.alert(
+            'Demande d\'exportation envoyée',
+            'Votre demande d\'exportation a été enregistrée. Vous recevrez un email contenant vos données personnelles prochainement.'
+          );
+        }
+      }
     );
-  }
+  };
+  
+  // Fonction pour demander la suppression des données
+  const handleDeleteRequest = () => {
+    showConfirmation({
+      title: 'Demande de suppression',
+      message: 'Êtes-vous sûr de vouloir demander la suppression de vos données personnelles ? Cette action ne peut pas être annulée. Veuillez noter que certaines données peuvent être conservées conformément à la législation applicable.',
+      confirmLabel: 'Confirmer la demande',
+      cancelLabel: 'Annuler',
+      onConfirm: async () => {
+        await executeRequest(
+          () => rgpdAPI.deleteData(user.id),
+          {
+            errorTitle: 'Erreur',
+            errorMessage: 'Impossible de traiter votre demande de suppression. Veuillez réessayer.',
+            onSuccess: () => {
+              Alert.alert(
+                'Demande de suppression envoyée',
+                'Votre demande de suppression a été enregistrée. Vous recevrez une confirmation par email. Veuillez noter que le traitement peut prendre jusqu\'à 30 jours.'
+              );
+            }
+          }
+        );
+      }
+    });
+  };
   
   return (
     <ScrollView style={styles.container}>
-      {/* Introduction */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title>Protection des données personnelles (RGPD)</Title>
-          <Paragraph style={styles.paragraph}>
-            Conformément au Règlement Général sur la Protection des Données (RGPD),
-            nous vous informons de la manière dont nous traitons vos données personnelles
-            et des droits dont vous disposez.
-          </Paragraph>
-        </Card.Content>
-      </Card>
+      {/* En-tête */}
+      <View style={styles.header}>
+        <Title style={styles.headerTitle}>Protection des données (RGPD)</Title>
+        <Text style={styles.headerText}>
+          Gérez vos consentements et vos droits concernant la protection de vos données personnelles.
+        </Text>
+      </View>
       
       {/* Consentements */}
       <Card style={styles.card}>
         <Card.Content>
           <Title style={styles.cardTitle}>Vos consentements</Title>
+          <Text style={styles.cardDescription}>
+            Vous pouvez modifier vos préférences à tout moment. Les modifications prennent effet immédiatement.
+          </Text>
           
-          <List.Item
-            title="Données personnelles"
-            description="Nous autorisez-vous à traiter vos données personnelles pour assurer le fonctionnement de l'application ?"
-            left={props => <List.Icon {...props} icon="account-check" />}
-            right={() => (
-              <Switch
-                value={consentements.donnees_personnelles}
-                onValueChange={(value) => updateConsent('donnees_personnelles', value)}
-                disabled={loading}
-                color={theme.colors.primary}
-              />
-            )}
-          />
-          
-          <Divider style={styles.divider} />
-          
-          <List.Item
-            title="Communications"
-            description="Nous autorisez-vous à vous envoyer des rappels de rendez-vous et autres communications importantes ?"
-            left={props => <List.Icon {...props} icon="email" />}
-            right={() => (
-              <Switch
-                value={consentements.communications}
-                onValueChange={(value) => updateConsent('communications', value)}
-                disabled={loading}
-                color={theme.colors.primary}
-              />
-            )}
-          />
-          
-          <Divider style={styles.divider} />
-          
-          <List.Item
-            title="Analyses statistiques"
-            description="Nous autorisez-vous à utiliser vos données de manière anonymisée à des fins d'analyse statistique ?"
-            left={props => <List.Icon {...props} icon="chart-bar" />}
-            right={() => (
-              <Switch
-                value={consentements.analyses_statistiques}
-                onValueChange={(value) => updateConsent('analyses_statistiques', value)}
-                disabled={loading}
-                color={theme.colors.primary}
-              />
-            )}
-          />
-        </Card.Content>
-      </Card>
-      
-      {/* Politique de conservation */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title style={styles.cardTitle}>Politique de conservation des données</Title>
-          
-          <Paragraph style={styles.paragraph}>
-            Nous conservons vos données pendant la durée nécessaire au suivi de vos soins
-            et selon les obligations légales applicables aux professionnels de santé.
-          </Paragraph>
-          
-          {deletionPolicy && (
-            <View style={styles.policyDetails}>
-              <Text style={styles.policyTitle}>Délais de conservation :</Text>
-              
-              <View style={styles.policyItem}>
-                <Text style={styles.policyLabel}>• Dossier patient :</Text>
-                <Text style={styles.policyValue}>{deletionPolicy.patient} mois après la dernière consultation</Text>
-              </View>
-              
-              <View style={styles.policyItem}>
-                <Text style={styles.policyLabel}>• Rendez-vous :</Text>
-                <Text style={styles.policyValue}>{deletionPolicy.rendez_vous} mois après la date du rendez-vous</Text>
-              </View>
-              
-              <View style={styles.policyItem}>
-                <Text style={styles.policyLabel}>• Bilans :</Text>
-                <Text style={styles.policyValue}>{deletionPolicy.bilans} mois après la création du bilan</Text>
-              </View>
+          {loading && consentItems.every(item => !item.accepted) ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+              <Text style={styles.loadingText}>Chargement de vos préférences...</Text>
+            </View>
+          ) : (
+            <View style={styles.consentsList}>
+              {consentItems.map((item, index) => (
+                <React.Fragment key={item.id}>
+                  <List.Item
+                    title={item.title}
+                    description={item.description}
+                    left={props => (
+                      <List.Icon 
+                        {...props} 
+                        icon={item.accepted ? "check-circle" : "circle-outline"} 
+                        color={item.accepted ? theme.colors.primary : "#757575"}
+                      />
+                    )}
+                    right={props => (
+                      <Switch
+                        value={item.accepted}
+                        onValueChange={value => handleConsentChange(item.id, value)}
+                        color={theme.colors.primary}
+                        disabled={loading}
+                      />
+                    )}
+                  />
+                  {index < consentItems.length - 1 && <Divider />}
+                </React.Fragment>
+              ))}
             </View>
           )}
         </Card.Content>
@@ -169,40 +204,101 @@ const RGPDScreen = () => {
       <Card style={styles.card}>
         <Card.Content>
           <Title style={styles.cardTitle}>Vos droits</Title>
-          
-          <Text style={styles.rightsText}>Conformément au RGPD, vous disposez des droits suivants :</Text>
+          <Text style={styles.cardDescription}>
+            Conformément au RGPD, vous disposez de droits sur vos données personnelles.
+          </Text>
           
           <View style={styles.rightsList}>
-            <View style={styles.rightsItem}>
-              <Text style={styles.rightsLabel}>• Droit d'accès</Text>
-              <Text style={styles.rightsDescription}>Vous pouvez demander une copie de vos données personnelles.</Text>
+            <View style={styles.rightItem}>
+              <View style={styles.rightIconContainer}>
+                <Icon name="eye" size={24} color={theme.colors.primary} />
+              </View>
+              <View style={styles.rightContent}>
+                <Text style={styles.rightTitle}>Droit d'accès</Text>
+                <Text style={styles.rightDescription}>
+                  Vous pouvez obtenir une copie de toutes les données personnelles que nous détenons à votre sujet.
+                </Text>
+              </View>
             </View>
             
-            <View style={styles.rightsItem}>
-              <Text style={styles.rightsLabel}>• Droit de rectification</Text>
-              <Text style={styles.rightsDescription}>Vous pouvez corriger vos données inexactes ou incomplètes.</Text>
+            <View style={styles.rightItem}>
+              <View style={styles.rightIconContainer}>
+                <Icon name="pencil" size={24} color={theme.colors.primary} />
+              </View>
+              <View style={styles.rightContent}>
+                <Text style={styles.rightTitle}>Droit de rectification</Text>
+                <Text style={styles.rightDescription}>
+                  Vous pouvez demander la correction de vos données personnelles si elles sont inexactes.
+                </Text>
+              </View>
             </View>
             
-            <View style={styles.rightsItem}>
-              <Text style={styles.rightsLabel}>• Droit à l'effacement</Text>
-              <Text style={styles.rightsDescription}>Vous pouvez demander la suppression de vos données.</Text>
+            <View style={styles.rightItem}>
+              <View style={styles.rightIconContainer}>
+                <Icon name="delete" size={24} color={theme.colors.primary} />
+              </View>
+              <View style={styles.rightContent}>
+                <Text style={styles.rightTitle}>Droit à l'effacement</Text>
+                <Text style={styles.rightDescription}>
+                  Vous pouvez demander la suppression de vos données personnelles dans certains cas.
+                </Text>
+              </View>
             </View>
             
-            <View style={styles.rightsItem}>
-              <Text style={styles.rightsLabel}>• Droit à la limitation</Text>
-              <Text style={styles.rightsDescription}>Vous pouvez demander la limitation du traitement de vos données.</Text>
-            </View>
-            
-            <View style={styles.rightsItem}>
-              <Text style={styles.rightsLabel}>• Droit à la portabilité</Text>
-              <Text style={styles.rightsDescription}>Vous pouvez récupérer vos données dans un format structuré.</Text>
+            <View style={styles.rightItem}>
+              <View style={styles.rightIconContainer}>
+                <Icon name="lock" size={24} color={theme.colors.primary} />
+              </View>
+              <View style={styles.rightContent}>
+                <Text style={styles.rightTitle}>Droit à la limitation</Text>
+                <Text style={styles.rightDescription}>
+                  Vous pouvez demander que nous limitions le traitement de vos données.
+                </Text>
+              </View>
             </View>
           </View>
           
-          <Text style={styles.contactText}>
-            Pour exercer ces droits, veuillez contacter notre Délégué à la Protection des Données :
-            dpo@kinebilan.fr
+          <View style={styles.actionsContainer}>
+            <Button 
+              mode="contained" 
+              icon="download" 
+              onPress={handleExportData}
+              style={styles.actionButton}
+              disabled={loading}
+            >
+              Exporter mes données
+            </Button>
+            
+            <Button 
+              mode="outlined" 
+              icon="delete-outline" 
+              onPress={handleDeleteRequest}
+              style={[styles.actionButton, styles.deleteButton]}
+              color="#F44336"
+              disabled={loading}
+            >
+              Demander la suppression
+            </Button>
+          </View>
+        </Card.Content>
+      </Card>
+      
+      {/* Politique de confidentialité */}
+      <Card style={styles.card}>
+        <Card.Content>
+          <Title style={styles.cardTitle}>Politique de confidentialité</Title>
+          <Text style={styles.cardDescription}>
+            Pour plus d'informations sur la façon dont nous traitons vos données personnelles, veuillez consulter notre politique de confidentialité.
           </Text>
+          
+          <Button 
+            mode="text" 
+            icon="open-in-new" 
+            onPress={() => {}}
+            style={styles.policyButton}
+          >
+            Consulter la politique de confidentialité
+          </Button>
         </Card.Content>
       </Card>
     </ScrollView>
@@ -214,73 +310,87 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+  header: {
+    padding: 16,
+    paddingTop: 24,
   },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
+  headerTitle: {
+    fontSize: 24,
+    marginBottom: 8,
+  },
+  headerText: {
+    fontSize: 14,
     color: '#666',
+    lineHeight: 20,
   },
   card: {
-    margin: 8,
+    margin: 16,
+    marginTop: 0,
     elevation: 2,
   },
   cardTitle: {
-    marginBottom: 16,
     fontSize: 18,
-  },
-  paragraph: {
-    marginBottom: 12,
-    lineHeight: 20,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#eee',
-  },
-  policyDetails: {
-    marginTop: 12,
-    backgroundColor: '#f9f9f9',
-    padding: 12,
-    borderRadius: 4,
-  },
-  policyTitle: {
-    fontWeight: 'bold',
     marginBottom: 8,
   },
-  policyItem: {
-    flexDirection: 'row',
-    marginBottom: 4,
+  cardDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 16,
   },
-  policyLabel: {
-    width: '40%',
-    fontWeight: 'bold',
+  loadingContainer: {
+    padding: 16,
+    alignItems: 'center',
   },
-  policyValue: {
-    flex: 1,
+  loadingText: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 8,
   },
-  rightsText: {
-    marginBottom: 12,
+  consentsList: {
+    marginTop: 8,
   },
   rightsList: {
-    marginVertical: 8,
+    marginTop: 8,
   },
-  rightsItem: {
-    marginBottom: 8,
+  rightItem: {
+    flexDirection: 'row',
+    marginBottom: 16,
   },
-  rightsLabel: {
+  rightIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#e3f2fd',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  rightContent: {
+    flex: 1,
+  },
+  rightTitle: {
+    fontSize: 16,
     fontWeight: 'bold',
+    marginBottom: 4,
   },
-  rightsDescription: {
-    marginLeft: 16,
-    color: '#555',
+  rightDescription: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
   },
-  contactText: {
-    marginTop: 16,
-    fontStyle: 'italic',
+  actionsContainer: {
+    marginTop: 24,
+  },
+  actionButton: {
+    marginBottom: 12,
+    borderRadius: 4,
+  },
+  deleteButton: {
+    borderColor: '#F44336',
+  },
+  policyButton: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
   },
 });
 
